@@ -1,36 +1,27 @@
+#!/usr/bin/env python3
 import platform
 import socket
 import struct
 import sys
 import time
-
 import select
 
 from icmpPacketBuilder import IcmpPacketBuilder
 from tracerouteResult import TracerouteResult
+from settings import TracerouteSettings
+
 
 class MainTraceroute:
-    """
-    Class implementing traceroute functionality.
-    """
 
-    def __init__(
-        self,
-        target_host: str,
-        max_ttl: int = 30,
-        num_probes: int = 3,
-        timeout: float = 2.0,
-        interval: float = 0.5,
-        packet_size: int = 40
-    ) -> None:
-        self._target_host = target_host
-        self._max_ttl = max_ttl
-        self._num_probes = num_probes
-        self._timeout = timeout
-        self._interval = interval
-        self._packet_size = packet_size
+    def __init__(self, settings: TracerouteSettings) -> None:
+        self.settings = settings
+        self._target_host = settings.target_host
+        self._max_ttl = settings.max_ttl
+        self._num_probes = settings.num_probes
+        self._timeout = settings.timeout
+        self._interval = settings.interval
+        self._packet_size = settings.packet_size
 
-        # Resolve target address
         try:
             self._target_addr = socket.gethostbyname(self._target_host)
         except socket.gaierror as e:
@@ -41,8 +32,13 @@ class MainTraceroute:
         print(f"traceroute to {self._target_host} ({self._target_addr}), {self._max_ttl} hops max")
 
         icmp_proto = socket.getprotobyname("icmp")
-        send_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp_proto)
-        recv_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp_proto)
+        try:
+            send_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp_proto)
+            recv_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, icmp_proto)
+        except PermissionError:
+            print("Operation not permitted. Are you running as Administrator/root?")
+            sys.exit(1)
+
         recv_socket.settimeout(self._timeout)
 
         pid = int(time.time() * 1000) & 0xFFFF
@@ -72,7 +68,7 @@ class MainTraceroute:
                 try:
                     send_socket.sendto(icmp_packet, (self._target_addr, 0))
                 except PermissionError:
-                    print("Operation not permitted. Are you running as Administrator?")
+                    print("Operation not permitted. Are you running as Administrator/root?")
                     sys.exit(1)
 
                 response_ip, rtt = self._receive_response(recv_socket, pid, sequence_number, start_time)
@@ -91,17 +87,21 @@ class MainTraceroute:
         recv_socket.close()
 
     def _receive_response(
-        self,
-        recv_socket: socket.socket,
-        pid: int,
-        sequence_number: int,
-        send_time: float
+            self,
+            recv_socket: socket.socket,
+            pid: int,
+            sequence_number: int,
+            send_time: float
     ) -> tuple[str | None, float | None]:
         time_left = self._timeout
         current_os = platform.system()
         while True:
             start_select = time.time()
-            ready = select.select([recv_socket], [], [], time_left)
+            try:
+                ready = select.select([recv_socket], [], [], time_left)
+            except Exception as e:
+                print(f"Select error: {e}")
+                return None, None
             how_long_in_select = time.time() - start_select
 
             if ready[0] == []:
@@ -150,4 +150,3 @@ class MainTraceroute:
             time_left = time_left - how_long_in_select
             if time_left <= 0:
                 return None, None
-

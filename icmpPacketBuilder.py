@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import struct
 
 
@@ -25,18 +26,17 @@ class IcmpPacketBuilder:
 
     @staticmethod
     def build_echo_request(
-        packet_id: int,
-        sequence_number: int,
-        packet_size: int
+            packet_id: int,
+            sequence_number: int,
+            packet_size: int
     ) -> bytes:
         """
         Build an ICMP echo request packet with given packet ID, sequence number, and payload size.
         """
-        icmp_type = 8   # Echo request
+        icmp_type = 8  # Echo request
         icmp_code = 0
         icmp_header = struct.pack("!BBHHH", icmp_type, icmp_code, 0, packet_id, sequence_number)
         payload = bytes(packet_size)
         chksum = IcmpPacketBuilder._checksum(icmp_header + payload)
         icmp_header = struct.pack("!BBHHH", icmp_type, icmp_code, chksum, packet_id, sequence_number)
         return icmp_header + payload
-
